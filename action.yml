@@ -168,12 +168,11 @@ runs:
           --output-json=$JSON_FILE \
           --oci-client=${{ inputs.oci_client }} \
           --block-on="${{ inputs.block_on}}"
+        cat $JSON_FILE >> "$GITHUB_OUTPUT"
         if [ ! -f "$JSON_FILE" ]; then
           echo "Error: $JSON_FILE not found"
           exit 1
         fi
-
-        cat $JSON_FILE >> "$GITHUB_OUTPUT"
 
         if [ -n "$OUTPUT_JSON" ]; then
           echo "Moving scan output to $OUTPUT_JSON"
