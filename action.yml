@@ -204,15 +204,15 @@ runs:
         fi
 
         # Extract basic fields
-        IMAGE_VERSION=$(jq -r '.imageVersion' "$OUTPUT_JSON")
-        IMAGE_NAME=$(jq -r '.imageName' "$OUTPUT_JSON")
-        SCAN_STATUS=$(jq -r '.scanStatus' "$OUTPUT_JSON")
+        IMAGE_VERSION=$(jq -r '.[0]imageVersion' "$OUTPUT_JSON")
+        IMAGE_NAME=$(jq -r '.[0]imageName' "$OUTPUT_JSON")
+        SCAN_STATUS=$(jq -r '.[0]scanStatus' "$OUTPUT_JSON")
 
         # Count CVE's
-        TOTAL_CVES=$(jq '.introducedCves | length' "$OUTPUT_JSON")
-        NEW_CVES=$(jq '[.introducedCves[] | select(.status == "introduced")] | length' "$OUTPUT_JSON")
-        OLD_CVES=$(jq '[.introducedCves[] | select(.status == "no_change")] | length' "$OUTPUT_JSON")
-        HIGH_CVES=$(jq '[.introducedCves[] | select(.severity == "HIGH")] | length' "$OUTPUT_JSON")
+        TOTAL_CVES=$(jq '.[0]introducedCves | length' "$OUTPUT_JSON")
+        NEW_CVES=$(jq '[.[0]introducedCves[] | select(.status == "introduced")] | length' "$OUTPUT_JSON")
+        OLD_CVES=$(jq '[.[0]introducedCves[] | select(.status == "no_change")] | length' "$OUTPUT_JSON")
+        HIGH_CVES=$(jq '[.[0]introducedCves[] | select(.severity == "HIGH")] | length' "$OUTPUT_JSON")
 
         COMMENT=$(cat <<EOF
         ## 🏄‍♂️ Upwind Image Scan Report
