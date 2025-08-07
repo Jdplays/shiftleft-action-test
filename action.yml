@@ -174,7 +174,7 @@ runs:
           exit 1
         fi
 
-        cat $JSON_FILE >> "$GITHUB_OUTPUT"
+        echo "report_output=$(cat some-raw-json.json | jq -Rs .)" >> "$GITHUB_OUTPUT"
 
         if [ -n "$OUTPUT_JSON" ]; then
           echo "Moving scan output to $OUTPUT_JSON"
