@@ -214,11 +214,15 @@ runs:
         OLD_CVES=$(jq '[.introducedCves[] | select(.status == "no_change")] | length' "$OUTPUT_JSON")
         HIGH_CVES=$(jq '[.introducedCves[] | select(.severity == "HIGH")] | length' "$OUTPUT_JSON")
 
-        COMMENT="## 🏄‍♂️ Upwind Image Scan Report
+        COMMENT=$(cat <<EOF
+        ## 🏄‍♂️ Upwind Image Scan Report
+
         - **Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`
         - **Status:** \`$SCAN_STATUS\`
-        - **Total CVEs:** $TOTAL_CVES - ($NEW_CVES new and $OLD_CVES existing)
-        - **High Severity CVEs:** $HIGH_CVES
+        - **Total CVEs:** \`$TOTAL_CVES\` (\`$NEW_CVES\` new, \`$OLD_CVES\` existing)
+        - **High Severity CVEs:** \`$HIGH_CVES\`
+        EOF
+        )
 
         echo "Posting comment on PR:"
         echo "$COMMENT"
