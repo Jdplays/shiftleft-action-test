@@ -140,6 +140,7 @@ runs:
       env:
         OUTPUT_JSON: ${{ inputs.output_json }}
       run: |
+        JSON_FILE="scan-results.json"
         echo "Running Upwind Scan"
         COMMIT_SHA=${GITHUB_SHA}
         if [[ -n "${{ inputs.commit_sha }}" ]]; then
