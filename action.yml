@@ -137,6 +137,8 @@ runs:
         chmod +x "$AGENT_OUTPUT"
     - name: Execute scan against the docker image
       shell: bash
+      env:
+        OUTPUT_JSON: ${{ inputs.output_json }}
       run: |
         echo "Running Upwind Scan"
         COMMIT_SHA=${GITHUB_SHA}
@@ -166,10 +168,20 @@ runs:
           --output-json=$JSON_FILE \
           --oci-client=${{ inputs.oci_client }} \
           --block-on="${{ inputs.block_on}}"
-        cat $JSON_FILE >> "$GITHUB_OUTPUT"
-        if [[ -n "${{ inputs.output_json }}" ]]; then
-          mv $JSON_FILE "${{ inputs.output_json }}"
+        if [ ! -f "$JSON_FILE" ]; then
+          echo "Error: $JSON_FILE not found"
+          exit 1
         fi
+
+        cat $JSON_FILE >> "$GITHUB_OUTPUT"
+
+        if [ -n "$OUTPUT_JSON" ]; then
+          echo "Moving scan output to $OUTPUT_JSON"
+          mv "$JSON_FILE" "$OUTPUT_JSON"
+        else
+          echo "No output_json provided, skipping move"
+        fi
+
         echo "Info: Image scan completed"
     - name: Comment on PR (conditional)
       shell: bash
@@ -178,10 +190,11 @@ runs:
         REPO: ${{ inputs.repo_name }}
         PR_NUMBER: ${{ inputs.pr_number }}
         ADD_COMMENT: ${{ inputs.add_comment }}
+        OUTPUT_JSON: ${{ inputs.output_json }}
       run: |
         if [ "$ADD_COMMENT" = "true" ]; then
           echo "Info: Adding report comment"
-          COMMENT_BODY=$(cat "${{ inputs.output_json }}" | jq -Rs .)
+          COMMENT_BODY=$(cat "$OUTPUT_JSON" | jq -Rs .)
             curl -L \
               -X POST \
               -H "Authorization: bearer $GH_TOKEN" \
