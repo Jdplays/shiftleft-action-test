@@ -1,0 +1,54 @@
+name: Run on PR Creation
+
+on:
+  workflow_dispatch
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  Build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update && sudo apt install -y golang ca-certificates curl jq
+          go install github.com/gohugoio/hugo@latest
+
+      - name: Install Podman
+        run: |
+          sudo apt update
+          sudo apt install -y podman
+
+      - name: Build Image with Podman
+        run: |
+          IMAGE_NAME=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_TAG="${IMAGE_NAME}-yippie:pranay-test"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          sudo docker build . --tag "${IMAGE_TAG}"
+
+      # - name: Build Docker Image
+      #   run: sudo docker build . --tag ${GITHUB_REPOSITORY}:${GITHUB_SHA}
+
+      - name: List images
+        run: sudo docker images
+        
+      - name: Execute Upwind CI scan plugin
+        uses: upwindsecurity/shiftleft-create-image-scan-event-action@AG-3431_add_comment_to_pr
+        with:
+          upwind_client_id: ${{ secrets.INTEGRATION_UPWIND_CI_EVENT_DEV_CLIENT_ID }}
+          upwind_client_secret: ${{ secrets.INTEGRATION_UPWIND_CI_EVENT_DEV_CLIENT_SECRET }}
+          upwind_uri: "upwind.dev"
+          docker_image: 'ubuntu:22.04'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_number: ${{ github.event.number }}
+          repo_name: ${{ github.repository }}
+          add_comment: true
+          debug: true
