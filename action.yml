@@ -59,6 +59,10 @@ inputs:
     default: false
     required: false
     type: boolean
+  output_md:
+    description: File location to write Markdown output to
+    default: "output.md"
+    type: string
   debug:
     description: Enable debug logging
     default: false
@@ -140,7 +144,7 @@ runs:
       env:
         OUTPUT_JSON: ${{ inputs.output_json }}
       run: |
-        JSON_FILE="scan-results.json"
+        MD_FILE="scan-results.md"
         echo "Running Upwind Scan"
         COMMIT_SHA=${GITHUB_SHA}
         if [[ -n "${{ inputs.commit_sha }}" ]]; then
@@ -169,21 +173,7 @@ runs:
           --output-json=$JSON_FILE \
           --oci-client=${{ inputs.oci_client }} \
           --block-on="${{ inputs.block_on}}" \
-          --output-github-markdown
-        if [ ! -f "$JSON_FILE" ]; then
-          echo "Error: $JSON_FILE not found"
-          exit 1
-        fi
-
-        echo "report_output=$(cat some-raw-json.json | jq -Rs .)" >> "$GITHUB_OUTPUT"
-
-        if [ -n "$OUTPUT_JSON" ]; then
-          echo "Moving scan output to $OUTPUT_JSON"
-          mv "$JSON_FILE" "$OUTPUT_JSON"
-        else
-          echo "No output_json provided, skipping move"
-        fi
-
+          --output-github-markdown=$MD_FILE 
         echo "Info: Image scan completed"
     - name: Comment on PR (conditional)
       shell: bash
@@ -192,7 +182,7 @@ runs:
         REPO: ${{ inputs.repo_name }}
         PR_NUMBER: ${{ inputs.pr_number }}
         ADD_COMMENT: ${{ inputs.add_comment }}
-        OUTPUT_JSON: ${{ inputs.output_json }}
+        OUTPUT_MD: ${{ inputs.output_md }}
       run: |
         if [ "$ADD_COMMENT" != "true" ]; then
           echo "Info: Skipping comment"
@@ -204,29 +194,7 @@ runs:
           exit 1
         fi
 
-        # Extract basic fields
-        IMAGE_VERSION=$(jq -r '.[0].imageVersion' "$OUTPUT_JSON")
-        IMAGE_NAME=$(jq -r '.[0].imageName' "$OUTPUT_JSON")
-        SCAN_STATUS=$(jq -r '.[0].scanStatus' "$OUTPUT_JSON")
-
-        # Count CVE's
-        TOTAL_CVES=$(jq '.[0].introducedCves | length' "$OUTPUT_JSON")
-        NEW_CVES=$(jq '[.[0].introducedCves[] | select(.status == "introduced")] | length' "$OUTPUT_JSON")
-        OLD_CVES=$(jq '[.[0].introducedCves[] | select(.status == "no_change")] | length' "$OUTPUT_JSON")
-        HIGH_CVES=$(jq '[.[0].introducedCves[] | select(.severity == "HIGH")] | length' "$OUTPUT_JSON")
-
-        COMMENT=$(cat <<EOF
-        ## 🏄‍♂️ Upwind Image Scan Report
-
-        - **Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`
-        - **Status:** \`$SCAN_STATUS\`
-        - **Total CVEs:** \`$TOTAL_CVES\` (\`$NEW_CVES\` new, \`$OLD_CVES\` existing)
-        - **High Severity CVEs:** \`$HIGH_CVES\`
-        EOF
-        )
-
-        echo "Posting comment on PR:"
-        echo "$COMMENT"
+        COMMENT=cat "$OUTPUT_MD"
 
         COMMENT_JSON=$(jq -n --arg body "$COMMENT" '{ body: $body }')
           curl -L \
