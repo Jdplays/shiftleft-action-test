@@ -174,8 +174,6 @@ runs:
           exit 1
         fi
 
-        echo "report_output=$(cat some-raw-json.json | jq -Rs .)" >> "$GITHUB_OUTPUT"
-
         if [ -n "$OUTPUT_JSON" ]; then
           echo "Moving scan output to $OUTPUT_JSON"
           mv "$JSON_FILE" "$OUTPUT_JSON"
@@ -244,8 +242,8 @@ runs:
 
           EOF
           )
-                else
-                  SECTION=$(cat <<EOF
+        else
+          SECTION=$(cat <<EOF
           ## $ARCH ⚠️
           - **Status:** \`$STATUS\`
           - **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)
