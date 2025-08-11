@@ -221,25 +221,26 @@ runs:
 
         # Loop through each architecture
         while IFS= read -r scan; do
-        ARCH=$(echo "$scan"   | jq -r '.arch // "<arch not specified>"')
-        STATUS=$(echo "$scan" | jq -r '.scanStatus // "<unknown>"')
+          ARCH=$(echo "$scan" | jq -r '.arch? // ""')
+            [ -z "$ARCH" ] && ARCH="<arch not specified>"
+          STATUS=$(echo "$scan" | jq -r '.scanStatus // "<unknown>"')
 
-        T=$(echo "$scan" | jq '.introducedCves // [] | length')
-        N=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="introduced")] | length')
-        O=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="no_change")] | length')
-        H=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="HIGH")] | length')
+          T=$(echo "$scan" | jq '.introducedCves // [] | length')
+          N=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="introduced")] | length')
+          O=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="no_change")] | length')
+          H=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="HIGH")] | length')
 
-        if [ "$T" -eq 0 ]; then
-          COMMENT+="## $ARCH ✅"$'\n'
-          COMMENT+="- **Status:** \`$STATUS\`"$'\n'
-          COMMENT+="- **CVEs:** None detected"$'\n\n'
-        else
-          COMMENT+="## $ARCH ⚠️"$'\n'
-          COMMENT+="- **Status:** \`$STATUS\`"$'\n'
-          COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
-          COMMENT+="- **High severity:** \`$H\`"$'\n\n'
-        fi
-        
+          if [ "$T" -eq 0 ]; then
+            COMMENT+="## $ARCH ✅"$'\n'
+            COMMENT+="- **Status:** \`$STATUS\`"$'\n'
+            COMMENT+="- **CVEs:** None detected"$'\n\n'
+          else
+            COMMENT+="## $ARCH ⚠️"$'\n'
+            COMMENT+="- **Status:** \`$STATUS\`"$'\n'
+            COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
+            COMMENT+="- **High severity:** \`$H\`"$'\n\n'
+          fi
+
         done < <(jq -c '.[]' "$ARRAY")
 
         echo "Posting comment on PR:"
