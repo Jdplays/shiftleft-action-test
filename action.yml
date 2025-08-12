@@ -224,7 +224,7 @@ runs:
           OTHER=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(((.severity // "" | ascii_upcase)!="CRITICAL") and ((.severity // "" | ascii_upcase)!="HIGH"))] | length')
 
           if [ "$T" -eq 0 ]; then
-            CLEAN_ARCHES+="- \`$ARCH\` (status: \`$STATUS\`)\n"
+            CLEAN_ARCHES+="- \`$ARCH\` (status: \`$STATUS\`)"$'\n'
             continue
           fi
 
