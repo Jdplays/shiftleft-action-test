@@ -232,7 +232,7 @@ runs:
           fi
 
           if [ "$H" -gt 0 ]; then
-            ROWS=$(echo "$scan" | jq =r '
+            ROWS=$(echo "$scan" | jq -r '
               [.introducedCves // [] | .[] | select(.severity=="HIGH")][]
               | [
                   (.cveId // .cveName // "<unknown>"),
@@ -259,6 +259,7 @@ runs:
             done <<< "$ROWS"
 
             COMMENT+=$'\n'
+          fi
 
         done < <(jq -c '.[]' "$ARRAY")
 
