@@ -273,7 +273,8 @@ runs:
             fi
             [ -z "$rows" ] && return 0
             
-            COMMENT+=$"| CVE | Description | Package |\n|---|---|---|\n"
+            COMMENT+=$'| CVE | Description | Package |\n'
+            COMMENT+=$'|---|---|---|\n'
             while IFS=$'\t' read -r CVE DESC PKG; do
               [ -z "${CVE}" ] && CVE="<unknown>"
               [ -z "${PKG}" ] && PKG="<pkg>"
