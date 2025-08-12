@@ -140,7 +140,6 @@ runs:
       env:
         OUTPUT_JSON: ${{ inputs.output_json }}
       run: |
-        JSON_FILE="scan-results.json"
         echo "Running Upwind Scan"
         COMMIT_SHA=${GITHUB_SHA}
         if [[ -n "${{ inputs.commit_sha }}" ]]; then
@@ -166,19 +165,12 @@ runs:
           --debug=${{ inputs.debug }}  \
           --additional-registries="${{ inputs.additional_registries}}" \
           --docker-pull=${{ inputs.pull_image }} \
-          --output-json=$JSON_FILE \
+          --output-json=$OUTPUT_JSON \
           --oci-client=${{ inputs.oci_client }} \
           --block-on="${{ inputs.block_on}}"
-        if [ ! -f "$JSON_FILE" ]; then
-          echo "Error: $JSON_FILE not found"
+        if [ ! -f "$OUTPUT_JSON" ]; then
+          echo "Error: $OUTPUT_JSON not found"
           exit 1
-        fi
-
-        if [ -n "$OUTPUT_JSON" ]; then
-          echo "Moving scan output to $OUTPUT_JSON"
-          mv "$JSON_FILE" "$OUTPUT_JSON"
-        else
-          echo "No output_json provided, skipping move"
         fi
 
         echo "Info: Image scan completed"
