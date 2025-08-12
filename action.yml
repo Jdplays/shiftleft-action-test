@@ -218,6 +218,7 @@ runs:
           N=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="introduced")] | length')
           O=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="no_change")] | length')
           H=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="HIGH")] | length')
+          C=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="CRITICAL")] | length')
 
           if [ "$T" -eq 0 ]; then
             COMMENT+="## $ARCH ✅"$'\n'
@@ -227,37 +228,42 @@ runs:
             COMMENT+="## $ARCH ⚠️"$'\n'
             COMMENT+="- **Status:** \`$STATUS\`"$'\n'
             COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
-            COMMENT+="- **High severity:** \`$H\`"$'\n\n'
-          fi
+            if [ "$C" -gt 0 ]; then
+              COMMENT+="- **Critical severity:** \`$C\`"$'\n\n'
+            fi
+            if [ "$H" -gt 0 ]; then
+              COMMENT+="- **High severity:** \`$H\`"$'\n\n'
+            fi
 
-          if [ "$H" -gt 0 ]; then
-            ROWS=$(echo "$scan" | jq -r '
-              [.introducedCves // [] | .[] | select(.severity=="HIGH")][]
-              | [
-                  (.cveId // .cveName // "<unknown>"),
-                  ((.cveDescription // "")
-                    | gsub("\\|"; "\\\\|")
-                    | gsub("`"; "\\\\`")
-                    | gsub("\r?\n"; " ")
-                    | .[0:400] ),
-                  ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
-                ]
-              | @tsv
-            ')
+            build_table() {
+              local severity="$1" heading="$2" rows
+              rows=$(echo "$scan" | jq -r --arg sev "$severity" '
+                [.introducedCves // [] | .[] | select((.severity // "" | ascii_upcase) == $sev)][]
+                | [
+                    (.cveId // .cveName // "<unknown>"),
+                    ((.cveDescription // "")
+                      | gsub("\\|"; "\\\\|")
+                      | gsub("`"; "\\\\`")
+                      | gsub("\r?\n"; " ")
+                      | .[0:400]),
+                    ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
+                  ]
+                | @tsv
+              ')
+              [ -z "$rows" ] && return 0
+              COMMENT+=$'# '"$heading"$' details\n\n'
+              COMMENT+=$'| CVE | Description | Package |\n'
+              COMMENT+=$'|---|---|---|\n'
+              while IFS=$'\t' read -r CVE DESC PKG; do
+                [ -z "${CVE}" ] && CVE="<unknown>"
+                [ -z "${PKG}" ] && PKG="<pkg>"
+                COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
+              done <<< "$rows"
+              COMMENT+=$'\n'
+            }
 
-            COMMENT+=$'# High severity details\n\n'
-            COMMENT+=$'| CVE | Description | Package |\n'
-            COMMENT+=$'|---|---|---|\n'
-
-            while IFS=$'\t' read -r CVE DESC PKG; do
-              # Fallbacks in case jq produced empty fields
-              CVE=${CVE:-<unknown>}
-              DESC=${DESC:-}
-              PKG=${PKG:-<pkg>}
-              COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
-            done <<< "$ROWS"
-
-            COMMENT+=$'\n'
+            [ "$C" -gt 0 ] && build_table "CRITICAL" "Critical severity"
+            [ "$H" -gt 0 ] && build_table "HIGH" "High severity"
           fi
         done < <(jq -c '.[]' "$ARRAY")
 
