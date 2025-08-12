@@ -173,6 +173,8 @@ runs:
           exit 1
         fi
 
+        cat $OUTPUT_JSON
+
         echo "Info: Image scan completed"
     - name: Comment on PR (conditional)
       shell: bash
@@ -225,7 +227,7 @@ runs:
           if [ "$T" -eq 0 ]; then
             COMMENT+="## $ARCH ✅"$'\n'
             COMMENT+="- **Status:** \`$STATUS\`"$'\n'
-            COMMENT+="- **CVEs:** None detected"$'\n\n'
+            COMMENT+="- **CVEs:** No new CVEs detected"$'\n\n'
           else
             COMMENT+="## $ARCH ⚠️"$'\n'
             COMMENT+="- **Status:** \`$STATUS\`"$'\n'
