@@ -199,10 +199,6 @@ runs:
         CLEAN="$(mktemp)"
         ARRAY="$(mktemp)"
 
-        # 1) Strip unsafe quotes inside cveDescription (leave key but clear value)
-        perl -0777 -pe 's/"cveDescription"\s*:\s*"(.*?)"(?=\s*,\s*"(?:packageName|isFunneled|status|severity|score|isExploitable|isFixAvailable|fixedInVersion|cvssVector)"\s*:)/"cveDescription": ""/sg' \
-          "$OUTPUT_JSON" > "$CLEAN"
-
         # Create an array from stream of valid json objects
         jq -cs 'if type=="array" then . else [.] end' "$CLEAN" > "$ARRAY"
 
@@ -234,6 +230,35 @@ runs:
             COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
             COMMENT+="- **High severity:** \`$H\`"$'\n\n'
           fi
+
+          if [ "$H" -gt 0 ]; then
+            ROWS=$(echo "$scan" | jq =r '
+              [.introducedCves // [] | .[] | select(.severity=="HIGH")][]
+              | [
+                  (.cveId // .cveName // "<unknown>"),
+                  ((.cveDescription // "")
+                    | gsub("\\|"; "\\\\|")
+                    | gsub("`"; "\\\\`")
+                    | gsub("\r?\n"; " ")
+                    | .[0:400] ),
+                  ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
+                ]
+              | @tsv
+            ')
+
+            COMMENT+=$'# High severity details\n\n'
+            COMMENT+=$'| CVE | Description | Package |\n'
+            COMMENT+=$'|---|---|---|\n'
+
+            while IFS=$'\t' read -r CVE DESC PKG; do
+              # Fallbacks in case jq produced empty fields
+              CVE=${CVE:-<unknown>}
+              DESC=${DESC:-}
+              PKG=${PKG:-<pkg>}
+              COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
+            done <<< "$ROWS"
+
+            COMMENT+=$'\n'
 
         done < <(jq -c '.[]' "$ARRAY")
 
