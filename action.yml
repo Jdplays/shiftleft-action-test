@@ -235,7 +235,7 @@ runs:
           COMMENT+="- **Critical:** \`$C\`, **High:** \`$H\`"$'\n\n'
 
           build_table() {
-            local severity="$1" heading="$2" rows
+            local sev="$1" heading="$2" rows
             if [ "$sev" = "OTHER" ]; then
               # Everything not CRITICAL/HIGH (MEDIUM/LOW/UNKNOWN)
               rows=$(echo "$scan" | jq -r '
