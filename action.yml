@@ -201,6 +201,8 @@ runs:
         # Create an array from stream of valid json objects
         jq -cs 'if type=="array" then . else [.] end' "$OUTPUT_JSON" > "$ARRAY"
 
+        CLEAN_ARCHES=""
+
         # Build base comment
         IMAGE_NAME=$(jq -r '.[0].imageName // "unknown"' "$ARRAY")
         IMAGE_VERSION=$(jq -r '.[0].imageVersion // "unknown"' "$ARRAY")
@@ -219,53 +221,95 @@ runs:
           O=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="no_change")] | length')
           H=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="HIGH")] | length')
           C=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="CRITICAL")] | length')
+          OTHER=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(((.severity // "" | ascii_upcase)!="CRITICAL") and ((.severity // "" | ascii_upcase)!="HIGH"))] | length')
 
           if [ "$T" -eq 0 ]; then
-            COMMENT+="## $ARCH ✅"$'\n'
-            COMMENT+="- **Status:** \`$STATUS\`"$'\n'
-            COMMENT+="- **CVEs:** No new CVEs detected"$'\n\n'
-          else
-            COMMENT+="## $ARCH ⚠️"$'\n'
-            COMMENT+="- **Status:** \`$STATUS\`"$'\n'
-            COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
-            if [ "$C" -gt 0 ]; then
-              COMMENT+="- **Critical severity:** \`$C\`"$'\n\n'
-            fi
-            if [ "$H" -gt 0 ]; then
-              COMMENT+="- **High severity:** \`$H\`"$'\n\n'
-            fi
+            CLEAN_ARCHES+="- \`$ARCH\` (status: \`$STATUS\`)\n"
+            continue
+          fi
 
-            build_table() {
-              local severity="$1" heading="$2" rows
-              rows=$(echo "$scan" | jq -r --arg sev "$severity" '
-                [.introducedCves // [] | .[] | select((.severity // "" | ascii_upcase) == $sev)][]
+          # Header for this arch
+          COMMENT+="## $ARCH"$'\n'
+          COMMENT+="- **Status:** \`$STATUS\`"$'\n'
+          COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
+          COMMENT+="- **Critical:** \`$C\`, **High:** \`$H\`"$'\n\n'
+
+          build_table() {
+            local severity="$1" heading="$2" rows
+            if [ "$sev" = "OTHER" ]; then
+              # Everything not CRITICAL/HIGH (MEDIUM/LOW/UNKNOWN)
+              rows=$(echo "$scan" | jq -r '
+                [.introducedCves // [] | .[]
+                  | select(((.severity // "" | ascii_upcase)!="CRITICAL") and ((.severity // "" | ascii_upcase)!="HIGH"))][]
                 | [
                     (.cveId // .cveName // "<unknown>"),
                     ((.cveDescription // "")
                       | gsub("\\|"; "\\\\|")
                       | gsub("`"; "\\\\`")
+                      | gsub("<"; "&lt;")
+                      | gsub(">"; "&gt;")
                       | gsub("\r?\n"; " ")
                       | .[0:400]),
                     ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
                   ]
                 | @tsv
               ')
-              [ -z "$rows" ] && return 0
-              COMMENT+=$'# '"$heading"$' details\n\n'
-              COMMENT+=$'| CVE | Description | Package |\n'
-              COMMENT+=$'|---|---|---|\n'
-              while IFS=$'\t' read -r CVE DESC PKG; do
-                [ -z "${CVE}" ] && CVE="<unknown>"
-                [ -z "${PKG}" ] && PKG="<pkg>"
-                COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
-              done <<< "$rows"
-              COMMENT+=$'\n'
-            }
+            else
+              rows=$(echo "$scan" | jq -r --arg sev "$sev" '
+                [.introducedCves // [] | .[] | select((.severity // "" | ascii_upcase)==$sev)][]
+                | [
+                    (.cveId // .cveName // "<unknown>"),
+                    ((.cveDescription // "")
+                      | gsub("\\|"; "\\\\|")
+                      | gsub("`"; "\\\\`")
+                      | gsub("<"; "&lt;")
+                      | gsub(">"; "&gt;")
+                      | gsub("\r?\n"; " ")
+                      | .[0:400]),
+                    ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
+                  ]
+                | @tsv
+              ')
+            fi
+            [ -z "$rows" ] && return 0
+            
+            COMMENT+=$"| CVE | Description | Package |\n|---|---|---|\n"
+            while IFS=$'\t' read -r CVE DESC PKG; do
+              [ -z "${CVE}" ] && CVE="<unknown>"
+              [ -z "${PKG}" ] && PKG="<pkg>"
+              COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
+            done <<< "$rows"
+            COMMENT+=$'\n'
+          }
 
-            [ "$C" -gt 0 ] && build_table "CRITICAL" "Critical severity"
-            [ "$H" -gt 0 ] && build_table "HIGH" "High severity"
+          # CRITICAL table (visible if any)
+          if [ "$C" -gt 0 ]; then
+            COMMENT+=$'### Critical severity\n\n'
+            build_table "CRITICAL" "Critical severity"
+          fi
+
+          # HIGH table (visible if any)
+          if [ "$H" -gt 0 ]; then
+            COMMENT+=$'### High severity\n\n'
+            build_table "HIGH" "High severity"
+          fi
+
+          # OTHER severities in a collapsed details section
+          if [ "$OTHER" -gt 0 ]; then
+            COMMENT+=$'<details><summary><strong>Other severities</strong> (Medium/Low/Unknown) — '
+            COMMENT+="\`$OTHER\` CVEs"
+            COMMENT+=$'</summary>'$'\n\n'
+            build_table "OTHER" "Other severities"
+            COMMENT+=$'</details>'$'\n\n'
           fi
         done < <(jq -c '.[]' "$ARRAY")
+
+        # Collapsed list of totally clean arches (if any)
+        if [ -n "$CLEAN_ARCHES" ]; then
+          COMMENT+=$'<details><summary><strong>More architectures</strong> — all clear ✅</summary>'$'\n\n'
+          COMMENT+="$CLEAN_ARCHES"$'\n'
+          COMMENT+=$'</details>'$'\n'
+        fi
 
         echo "Posting summary comment on PR"
 
