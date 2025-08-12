@@ -205,8 +205,8 @@ runs:
         jq -cs 'if type=="array" then . else [.] end' "$CLEAN" > "$ARRAY"
 
         # Build base comment
-        IMAGE_NAME=$(jq -r '.[0].imageName // "\<unknown\>"' "$ARRAY")
-        IMAGE_VERSION=$(jq -r '.[0].imageVersion // "\<unknown\>"' "$ARRAY")
+        IMAGE_NAME=$(jq -r '.[0].imageName // "unknown"' "$ARRAY")
+        IMAGE_VERSION=$(jq -r '.[0].imageVersion // "unknown"' "$ARRAY")
 
         COMMENT="# 🏄‍♂️ Upwind Image Scan Report"$'\n'
         COMMENT+="**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`"$'\n\n'
@@ -214,8 +214,8 @@ runs:
         # Loop through each architecture
         while IFS= read -r scan; do
           ARCH=$(echo "$scan" | jq -r '.arch? // ""')
-            [ -z "$ARCH" ] && ARCH="\<arch not specified\>"
-          STATUS=$(echo "$scan" | jq -r '.scanStatus // "\<unknown\>"')
+            [ -z "$ARCH" ] && ARCH="arch not specified"
+          STATUS=$(echo "$scan" | jq -r '.scanStatus // "unknown"')
 
           T=$(echo "$scan" | jq '.introducedCves // [] | length')
           N=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="introduced")] | length')
