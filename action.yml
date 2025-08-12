@@ -246,6 +246,8 @@ runs:
               | @tsv
             ')
 
+            cat $"ROWS"
+
             COMMENT+=$'# High severity details\n\n'
             COMMENT+=$'| CVE | Description | Package |\n'
             COMMENT+=$'|---|---|---|\n'
