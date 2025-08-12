@@ -196,11 +196,10 @@ runs:
         fi
 
         # Normalise JSON
-        CLEAN="$(mktemp)"
         ARRAY="$(mktemp)"
 
         # Create an array from stream of valid json objects
-        jq -cs 'if type=="array" then . else [.] end' "$CLEAN" > "$ARRAY"
+        jq -cs 'if type=="array" then . else [.] end' "$OUTPUT_JSON" > "$ARRAY"
 
         # Build base comment
         IMAGE_NAME=$(jq -r '.[0].imageName // "unknown"' "$ARRAY")
@@ -246,8 +245,6 @@ runs:
               | @tsv
             ')
 
-            cat $"ROWS"
-
             COMMENT+=$'# High severity details\n\n'
             COMMENT+=$'| CVE | Description | Package |\n'
             COMMENT+=$'|---|---|---|\n'
@@ -262,7 +259,6 @@ runs:
 
             COMMENT+=$'\n'
           fi
-
         done < <(jq -c '.[]' "$ARRAY")
 
         echo "Posting summary comment on PR"
