@@ -18,10 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Execute Upwind CI scan plugin
-        uses: ./
+        uses: upwindsecurity/shiftleft-create-image-scan-event-action@main
         with:
           upwind_client_id: ${{ secrets.INTEGRATION_UPWIND_CI_EVENT_DEV_CLIENT_ID }}
           upwind_client_secret: ${{ secrets.INTEGRATION_UPWIND_CI_EVENT_DEV_CLIENT_SECRET }}
-          upwind_uri: upwind.dev
+          upwind_uri: upwind.io
           docker_image: ubuntu:18.04
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_number: ${{ github.event.number }}
+          repo_name: ${{ github.repository }}
+          add_comment: true
           debug: true
