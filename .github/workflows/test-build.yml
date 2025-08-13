@@ -24,5 +24,4 @@ jobs:
           upwind_client_secret: ${{ secrets.INTEGRATION_UPWIND_CI_EVENT_DEV_CLIENT_SECRET }}
           upwind_uri: upwind.dev
           docker_image: ubuntu:18.04
-          add_comment: true
           debug: true
