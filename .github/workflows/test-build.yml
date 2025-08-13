@@ -25,6 +25,6 @@ jobs:
           upwind_uri: upwind.dev
           docker_image: ubuntu:18.04
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          pr_number: ${{ github.event.number }}
+          repo_name: ${{ github.repository }}
           add_comment: true
           debug: true
