@@ -27,4 +27,5 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ github.event.number }}
           repo_name: ${{ github.repository }}
+          add_comment: ""
           debug: true
