@@ -1,0 +1,324 @@
+---
+name: Upwind Security Image Scanning
+description: Scan against built images
+inputs:
+  upwind_client_id:
+    description: Upwind Client ID
+    required: true
+  upwind_client_secret:
+    description: Upwind Client Secret
+    required: true
+  docker_image:
+    description: Already built docker image residing on same runner
+    required: true
+  docker_user:
+    description: User to authenticate to the Docker registry
+    required: false
+  docker_password:
+    description: Password to authenticate to the Docker registry
+    required: false
+  pull_image:
+    description: Attempt to pull the image. Set to false if image is available locally
+    default: true
+    type: boolean
+  oci_client:
+    description: Client with which to pull image. Options are docker (default), podman, and skopeo
+    default: docker
+    type: string
+  additional_registries:
+    description: Comma-separated list of additional registries to associate with the scanned image, passed as a string
+    required: false
+  output_json:
+    description: File location to write JSON output to
+    default: "output.json"
+    type: string
+  commit_sha:
+    description: SHA to be associated with the build. By default this uses the $GITHUB_SHA environmental variable
+    default: ${GITHUB_SHA}
+    required: false
+  upwind_uri:
+    description: Public Upwind URI domain name
+    default: upwind.io
+    required: false
+  use_sudo:
+    description: whether to use sudo when invoking the scan to connect to the OCI client
+    default: true
+    required: false
+    type: boolean
+  github_token:
+    description: GitHub token for authentication
+    required: false
+  pr_number:
+    description: Pull request number
+    required: false
+  repo_name:
+    description: The GitHub repository in owner/repo format
+    required: false
+  add_comment:
+    description: Whether to add a comment to the PR when a scan is completed
+    default: false
+    required: false
+    type: boolean
+  debug:
+    description: Enable debug logging
+    default: false
+    type: boolean
+  block_on:
+    description: Block workflow based on Upwind Scan Recommendation. Can be either 'do_not_deploy' or 'deploy_with_caution'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate required inputs
+      shell: bash
+      run: |
+        if [ "${{ inputs.add_comment }}" = "true" ]; then
+          missing=""
+
+          if [ -z "${{ inputs.github_token }}" ]; then
+            missing+=" github_token"
+          fi
+
+          if [ -z "${{ inputs.pr_number }}" ]; then
+            missing+=" pr_number"
+          fi
+
+          if [ -z "${{ inputs.repo_name }}" ]; then
+            missing+=" repo_name"
+          fi
+
+          if [ -n "$missing" ]; then
+            echo "Error: Missing required inputs for add_comment=true:$missing"
+            exit 1
+          fi
+        fi
+    - name: Get auth token
+      id: get_auth_token
+      shell: bash
+      run: |
+        response=$(curl -sSL -X POST \
+        --url "https://oauth.${{ inputs.upwind_uri }}/oauth/token" \
+        --data "audience=https://agent.${{ inputs.upwind_uri }}" \
+        --data "client_id=${{ inputs.upwind_client_id }}" \
+        --data "client_secret=${{ inputs.upwind_client_secret }}" \
+        --data "grant_type=client_credentials")
+
+        if ! TOKEN=$(echo "$response" | jq -r '.access_token // empty' 2>/dev/null); then
+          echo "Failed to parse JSON response: $response" >&2
+          exit 1
+        elif [ -z "$TOKEN" ]; then
+          echo "No access_token found in response: $response" >&2
+          exit 1
+        fi
+
+        OS=$(uname | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m | tr '[:upper:]' '[:lower:]')
+
+        case "$ARCH" in
+          x86_64)
+            ARCH="amd64"
+            ;;
+          aarch64|arm64)
+            ARCH="arm64"
+            ;;
+          *)
+            echo "Unsupported architecture: $ARCH" >&2
+            exit 1
+            ;;
+        esac
+
+        UPWIND_AGENT="shiftleft"
+        AGENT_OUTPUT="${{ github.workspace }}/$UPWIND_AGENT"
+        # All binaries are pulled from US
+        UPWIND_AGENT_URL="https://releases.${{ inputs.upwind_uri }}/$UPWIND_AGENT/stable/$OS/$ARCH/$UPWIND_AGENT-$OS-$ARCH"
+
+        echo "Downloading from $UPWIND_AGENT_URL"
+        curl -fsS -H "Authorization: Bearer $TOKEN" -L "$UPWIND_AGENT_URL" -o "$AGENT_OUTPUT"
+        chmod +x "$AGENT_OUTPUT"
+    - name: Execute scan against the docker image
+      shell: bash
+      env:
+        OUTPUT_JSON: ${{ inputs.output_json }}
+      run: |
+        echo "Running Upwind Scan"
+        COMMIT_SHA=${GITHUB_SHA}
+        if [[ -n "${{ inputs.commit_sha }}" ]]; then
+          COMMIT_SHA=${{ inputs.commit_sha }}
+        fi
+        SUDO=""
+        if [ "${{ inputs.use_sudo }}" = "true" ]; then
+          SUDO=sudo
+        fi
+  
+        $SUDO ${{ github.workspace }}/shiftleft image \
+          --source=GITHUB_ACTIONS \
+          --initiator=${GITHUB_TRIGGERING_ACTOR} \
+          --upwind-uri=${{ inputs.upwind_uri }} \
+          --upwind-client-id=${{ inputs.upwind_client_id }} \
+          --upwind-client-secret=${{ inputs.upwind_client_secret }} \
+          --docker-image ${{ inputs.docker_image }} \
+          --commit-sha ${COMMIT_SHA} \
+          --branch ${GITHUB_REF} \
+          --repository ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} \
+          --docker-user="${{ inputs.docker_user }}" \
+          --docker-password="${{ inputs.docker_password }}" \
+          --debug=${{ inputs.debug }}  \
+          --additional-registries="${{ inputs.additional_registries}}" \
+          --docker-pull=${{ inputs.pull_image }} \
+          --output-json=$OUTPUT_JSON \
+          --oci-client=${{ inputs.oci_client }} \
+          --block-on="${{ inputs.block_on}}"
+        if [ ! -f "$OUTPUT_JSON" ]; then
+          echo "Error: $OUTPUT_JSON not found"
+          exit 1
+        fi
+
+        cat $OUTPUT_JSON
+
+        echo "Info: Image scan completed"
+    - name: Comment on PR (conditional)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ inputs.repo_name }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        ADD_COMMENT: ${{ inputs.add_comment }}
+        OUTPUT_JSON: ${{ inputs.output_json }}
+      run: |
+        if [ "$ADD_COMMENT" != "true" ]; then
+          echo "Info: Skipping comment"
+          exit 0
+        fi
+
+        if [ ! -f "$OUTPUT_JSON" ]; then
+          echo "Error: Output file not found: $OUTPUT_JSON"
+          exit 1
+        fi
+
+        # Normalise JSON
+        ARRAY="$(mktemp)"
+
+        # Create an array from stream of valid json objects
+        jq -cs 'if type=="array" then . else [.] end' "$OUTPUT_JSON" > "$ARRAY"
+
+        CLEAN_ARCHES=""
+
+        # Build base comment
+        IMAGE_NAME=$(jq -r '.[0].imageName // "unknown"' "$ARRAY")
+        IMAGE_VERSION=$(jq -r '.[0].imageVersion // "unknown"' "$ARRAY")
+
+        COMMENT="# 🏄‍♂️ Upwind Image Scan Report"$'\n'
+        COMMENT+="**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`"$'\n\n'
+
+        # Loop through each architecture
+        while IFS= read -r scan; do
+          ARCH=$(echo "$scan" | jq -r '.arch? // ""')
+            [ -z "$ARCH" ] && ARCH="arch not specified"
+          STATUS=$(echo "$scan" | jq -r '.scanStatus // "unknown"')
+
+          T=$(echo "$scan" | jq '.introducedCves // [] | length')
+          N=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="introduced")] | length')
+          O=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.status=="no_change")] | length')
+          H=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="HIGH")] | length')
+          C=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(.severity=="CRITICAL")] | length')
+          OTHER=$(echo "$scan" | jq '[.introducedCves // [] | .[] | select(((.severity // "" | ascii_upcase)!="CRITICAL") and ((.severity // "" | ascii_upcase)!="HIGH"))] | length')
+
+          if [ "$T" -eq 0 ]; then
+            CLEAN_ARCHES+="- \`$ARCH\` (status: \`$STATUS\`)"$'\n'
+            continue
+          fi
+
+          # Header for this arch
+          COMMENT+="## $ARCH"$'\n'
+          COMMENT+="- **Status:** \`$STATUS\`"$'\n'
+          COMMENT+="- **Total CVEs:** \`$T\` (\`$N\` new, \`$O\` existing)"$'\n'
+          COMMENT+="- **Critical:** \`$C\`, **High:** \`$H\`"$'\n\n'
+
+          build_table() {
+            local sev="$1" heading="$2" rows
+            if [ "$sev" = "OTHER" ]; then
+              # Everything not CRITICAL/HIGH (MEDIUM/LOW/UNKNOWN)
+              rows=$(echo "$scan" | jq -r '
+                [.introducedCves // [] | .[]
+                  | select(((.severity // "" | ascii_upcase)!="CRITICAL") and ((.severity // "" | ascii_upcase)!="HIGH"))][]
+                | [
+                    (.cveId // .cveName // "<unknown>"),
+                    ((.cveDescription // "")
+                      | gsub("\\|"; "\\\\|")
+                      | gsub("`"; "\\\\`")
+                      | gsub("<"; "&lt;")
+                      | gsub(">"; "&gt;")
+                      | gsub("\r?\n"; " ")
+                      | .[0:400]),
+                    ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
+                  ]
+                | @tsv
+              ')
+            else
+              rows=$(echo "$scan" | jq -r --arg sev "$sev" '
+                [.introducedCves // [] | .[] | select((.severity // "" | ascii_upcase)==$sev)][]
+                | [
+                    (.cveId // .cveName // "<unknown>"),
+                    ((.cveDescription // "")
+                      | gsub("\\|"; "\\\\|")
+                      | gsub("`"; "\\\\`")
+                      | gsub("<"; "&lt;")
+                      | gsub(">"; "&gt;")
+                      | gsub("\r?\n"; " ")
+                      | .[0:400]),
+                    ((.packageName // "<pkg>") + " " + (.packageVersion // ""))
+                  ]
+                | @tsv
+              ')
+            fi
+            [ -z "$rows" ] && return 0
+            
+            COMMENT+=$'| CVE | Description | Package |\n'
+            COMMENT+=$'|---|---|---|\n'
+            while IFS=$'\t' read -r CVE DESC PKG; do
+              [ -z "${CVE}" ] && CVE="<unknown>"
+              [ -z "${PKG}" ] && PKG="<pkg>"
+              COMMENT+="| ${CVE} | ${DESC} | ${PKG} |"$'\n'
+            done <<< "$rows"
+            COMMENT+=$'\n'
+          }
+
+          # CRITICAL table (visible if any)
+          if [ "$C" -gt 0 ]; then
+            COMMENT+=$'### Critical severity\n\n'
+            build_table "CRITICAL" "Critical severity"
+          fi
+
+          # HIGH table (visible if any)
+          if [ "$H" -gt 0 ]; then
+            COMMENT+=$'### High severity\n\n'
+            build_table "HIGH" "High severity"
+          fi
+
+          # OTHER severities in a collapsed details section
+          if [ "$OTHER" -gt 0 ]; then
+            COMMENT+=$'<details><summary><strong>Other severities</strong> (Medium/Low/Unknown) — '
+            COMMENT+="\`$OTHER\` CVEs"
+            COMMENT+=$'</summary>'$'\n\n'
+            build_table "OTHER" "Other severities"
+            COMMENT+=$'</details>'$'\n\n'
+          fi
+        done < <(jq -c '.[]' "$ARRAY")
+
+        # Collapsed list of totally clean arches (if any)
+        if [ -n "$CLEAN_ARCHES" ]; then
+          COMMENT+=$'<details><summary><strong>More architectures</strong> — all clear ✅</summary>'$'\n\n'
+          COMMENT+="$CLEAN_ARCHES"$'\n'
+          COMMENT+=$'</details>'$'\n'
+        fi
+
+        echo "Posting summary comment on PR"
+
+        COMMENT_JSON=$(jq -n --arg body "$COMMENT" '{ body: $body }')
+        curl -L \
+          -X POST \
+          -H "Authorization: bearer $GH_TOKEN" \
+          -H "Content-Type: application/json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          -d "$COMMENT_JSON" \
+          "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
